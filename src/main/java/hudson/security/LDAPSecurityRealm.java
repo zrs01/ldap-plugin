@@ -25,28 +25,34 @@
  */
 package hudson.security;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.Extension;
-import hudson.Main;
-import hudson.Util;
-import hudson.model.AbstractDescribableImpl;
-import hudson.model.Descriptor;
-import hudson.model.User;
-import hudson.tasks.MailAddressResolver;
-import hudson.tasks.Mailer;
-import hudson.tasks.Mailer.UserProperty;
-import hudson.util.FormValidation;
-import hudson.util.ListBoxModel;
-import hudson.util.Scrambler;
-import hudson.util.Secret;
-import jenkins.model.IdStrategy;
-import jenkins.model.Jenkins;
-import jenkins.security.plugins.ldap.FromGroupSearchLDAPGroupMembershipStrategy;
-import jenkins.security.plugins.ldap.LDAPConfiguration;
-import jenkins.security.plugins.ldap.LDAPGroupMembershipStrategy;
-import jenkins.security.plugins.ldap.LDAPExtendedTemplate;
-import net.sf.json.JSONArray;
-import net.sf.json.JSONObject;
+import static hudson.Util.fixNull;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
+import javax.naming.NamingException;
+import javax.naming.directory.Attribute;
+import javax.naming.directory.Attributes;
+import javax.naming.directory.BasicAttributes;
+import javax.naming.ldap.Control;
+import javax.naming.ldap.LdapName;
+
 import org.acegisecurity.AcegiSecurityException;
 import org.acegisecurity.Authentication;
 import org.acegisecurity.AuthenticationException;
@@ -83,32 +89,28 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
 import org.springframework.dao.DataAccessException;
 import org.springframework.web.context.WebApplicationContext;
 
-import javax.annotation.CheckForNull;
-import javax.annotation.Nonnull;
-import javax.naming.NamingException;
-import javax.naming.directory.Attribute;
-import javax.naming.directory.Attributes;
-import javax.naming.directory.BasicAttributes;
-import javax.naming.ldap.Control;
-import javax.naming.ldap.LdapName;
-import java.io.IOException;
-import java.io.Serializable;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-import static hudson.Util.fixNull;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.Extension;
+import hudson.Main;
+import hudson.Util;
+import hudson.model.AbstractDescribableImpl;
+import hudson.model.Descriptor;
+import hudson.model.User;
+import hudson.tasks.MailAddressResolver;
+import hudson.tasks.Mailer;
+import hudson.tasks.Mailer.UserProperty;
+import hudson.util.FormValidation;
+import hudson.util.ListBoxModel;
+import hudson.util.Scrambler;
+import hudson.util.Secret;
+import jenkins.model.IdStrategy;
+import jenkins.model.Jenkins;
+import jenkins.security.plugins.ldap.FromGroupSearchLDAPGroupMembershipStrategy;
+import jenkins.security.plugins.ldap.LDAPConfiguration;
+import jenkins.security.plugins.ldap.LDAPExtendedTemplate;
+import jenkins.security.plugins.ldap.LDAPGroupMembershipStrategy;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
 
 /**
  * {@link SecurityRealm} implementation that uses LDAP for authentication.
@@ -1111,7 +1113,7 @@ public class LDAPSecurityRealm extends AbstractPasswordBasedSecurityRealm {
 //                    throw e;
 //                }
 
-                // -- retry connect again if socket is closed (2019-03-06)
+                // -- retry connect againpro if socket is closed (2019-03-06)
                 int maxRetryCount = 3;
                 while (true) {
                     try {
@@ -1120,13 +1122,14 @@ public class LDAPSecurityRealm extends AbstractPasswordBasedSecurityRealm {
                         return auth;
                     } catch (AuthenticationServiceException e) {
                         LOGGER.log(Level.WARNING, "Failed communication with ldap server.", e);
-                        if (e.getMessage().indexOf("socket closed") != -1) {
+                        if (e.getMessage().indexOf("socket closed") != -1 || e.getMessage().indexOf("timeout") != -1) {
                             try {
-                                Thread.sleep(500);  // delay 0.5 second
+                                Thread.sleep(500); // delay 0.5 second
                             } catch (InterruptedException e1) {
                             }
                             retryCount++;
-                            LOGGER.log(Level.WARNING, "Retry communicate with ldap server: " + retryCount + "/" + maxRetryCount);
+                            LOGGER.log(Level.WARNING,
+                                    "Retry communicate with ldap server: " + retryCount + "/" + maxRetryCount);
                             if (retryCount >= maxRetryCount) {
                                 retryCount = 0;
                                 throw e;
